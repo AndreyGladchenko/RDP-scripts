@@ -1,0 +1,165 @@
+@echo off
+setlocal enabledelayedexpansion
+title RDP Setup Configuration
+
+:: Проверка прав администратора
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo #################################################
+    echo # Требуются права Администратора!              #
+    echo # Запустите скрипт от имени администратора.    #
+    echo #################################################
+    pause
+    exit /b 1
+)
+
+echo #################################################
+echo # Настройка удаленного подключения по RDP       #
+echo #################################################
+echo.
+
+:MAIN_MENU
+cls
+echo ========== ГЛАВНОЕ МЕНЮ ==========
+echo 1. Включить RDP сервер
+echo 2. Настроить брандмауэр для RDP
+echo 3. Создать пользователя для RDP
+echo 4. Настроить параметры RDP
+echo 5. Показать статус RDP
+echo 6. Полная настройка (все пункты)
+echo 7. Выход
+echo.
+set /p choice="Выберите действие [1-7]: "
+
+if "%choice%"=="1" goto ENABLE_RDP
+if "%choice%"=="2" goto FIREWALL
+if "%choice%"=="3" goto CREATE_USER
+if "%choice%"=="4" goto RDP_SETTINGS
+if "%choice%"=="5" goto SHOW_STATUS
+if "%choice%"=="6" goto FULL_SETUP
+if "%choice%"=="7" goto EXIT
+goto MAIN_MENU
+
+:ENABLE_RDP
+echo.
+echo Включение RDP сервера...
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
+echo RDP сервер включен.
+echo.
+pause
+goto MAIN_MENU
+
+:FIREWALL
+echo.
+echo Настройка брандмауэра для RDP...
+netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
+echo Правила брандмауэра для RDP настроены.
+echo.
+pause
+goto MAIN_MENU
+
+:CREATE_USER
+echo.
+set /p username="Введите имя пользователя: "
+set /p password="Введите пароль: "
+
+echo Создание пользователя %username%...
+net user %username% %password% /add
+if %errorLevel% equ 0 (
+    echo Пользователь %username% создан успешно.
+    
+    echo Добавление пользователя в группу удаленных пользователей...
+    net localgroup "Remote Desktop Users" %username% /add
+    
+    echo Настройка прав пользователя...
+    net localgroup administrators %username% /add >nul 2>&1
+    if %errorLevel% equ 0 (
+        echo Пользователь добавлен в группу администраторов.
+    ) else (
+        echo Пользователь добавлен только в группу удаленных пользователей.
+    )
+) else (
+    echo Ошибка при создании пользователя!
+)
+echo.
+pause
+goto MAIN_MENU
+
+:RDP_SETTINGS
+echo.
+echo Настройка параметров RDP...
+
+:: Разрешение подключения без аутентификации на уровне сети
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
+
+:: Настройка порта RDP (по умолчанию 3389)
+set /p rdp_port="Введите порт RDP [3389]: "
+if "%rdp_port%"=="" set rdp_port=3389
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d %rdp_port% /f
+
+:: Разрешение многопользовательского режима (только для Windows Server)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v TSUserEnabled /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v TSServerDrainMode /t REG_DWORD /d 0 /f >nul 2>&1
+
+echo Параметры RDP настроены.
+echo Порт RDP: %rdp_port%
+echo.
+pause
+goto MAIN_MENU
+
+:SHOW_STATUS
+echo.
+echo ========== СТАТУС RDP ==========
+echo Проверка службы Terminal Services...
+sc query TermService | find "STATE"
+echo.
+
+echo Проверка настроек RDP...
+reg query "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections
+echo.
+
+echo Проверка правил брандмауэра...
+netsh advfirewall firewall show rule name=all | find "Remote Desktop" >nul && echo Брандмауэр: RDP разрешен || echo Брандмауэр: RDP заблокирован
+echo.
+
+echo Текущий IP адрес:
+ipconfig | find "IPv4"
+echo.
+
+echo Порт RDP:
+reg query "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber
+echo.
+pause
+goto MAIN_MENU
+
+:FULL_SETUP
+echo.
+echo Запуск полной настройки RDP...
+call :ENABLE_RDP
+call :FIREWALL
+call :CREATE_USER
+call :RDP_SETTINGS
+
+echo.
+echo =================================
+echo Полная настройка завершена!
+echo =================================
+echo.
+echo Для подключения используйте:
+echo - Имя компьютера или IP-адрес
+echo - Порт: %rdp_port%
+echo - Логин: %username%
+echo.
+echo Не забудьте:
+echo 1. Настроить проброс порта на роутере (если нужно)
+echo 2. Убедиться в безопасности пароля
+echo 3. Рассмотреть использование VPN для безопасности
+echo.
+pause
+goto MAIN_MENU
+
+:EXIT
+echo.
+echo Выход из программы...
+timeout /t 2 /nobreak >nul
+exit /b 0
